@@ -126,7 +126,7 @@ class Launcher(tk.Tk):
         self.log = tk.Label(self.progress_frame, text="Progress:")
         self.progress_bar.grid(row=0, column=0, sticky="W")
         self.log.grid(row=0, column=1, columnspan=2, sticky="W")
-        self.progress_frame.grid(row=2, sticky=W+E+N+S, columnspan=2)
+        self.progress_frame.grid(row=2, sticky=W + E + N + S, columnspan=2)
 
     def show_data_status(self, stimulation_status, clustering_status):
         frame_files = tk.Frame(master=self.content_frame)
@@ -274,19 +274,21 @@ class Launcher(tk.Tk):
             clustering_status = 1
         elif len(list_block_sorted) > 0:
             clustering_status = 2
-        block_names = [file for file in os.listdir(data_path) if ".nwb" in file]
-
         self.show_data_status(stim_status, clustering_status)
-        list_block_compacted = []
-        for block in block_names:
-            block_number = int(block.split('-')[1][0:-4])
-            list_block_compacted.append(block_number)
-        list_block_compacted = sorted(list_block_compacted)
+
+        path_to_nwb = os.path.join(self.path, self.notebook["Experiment"]["ID"], "NWB")
         compact_status = 0
-        if list_block_compacted == info["Trials"]["Block"]:
-            compact_status = 1
-        elif len(list_block_compacted) > 0:
-            compact_status = 2
+        if os.path.exists(path_to_nwb):
+            block_names = [file for file in os.listdir(path_to_nwb) if ".nwb" in file]
+            list_block_compacted = []
+            for block in block_names:
+                block_number = int(block.split('-')[1][0:-4])
+                list_block_compacted.append(block_number)
+            list_block_compacted = sorted(list_block_compacted)
+            if list_block_compacted == info["Trials"]["Block"]:
+                compact_status = 1
+            elif len(list_block_compacted) > 0:
+                compact_status = 2
         if stim_status > 0 and clustering_status > 0:
             self.show_buttons(compact_status)
 
@@ -373,9 +375,11 @@ class Launcher(tk.Tk):
                                      electrodes=electrodes,
                                      id=cluster_shift + int(cluster))
             previous_time += end_time
+            path_to_nwb = os.path.join(self.path, self.notebook["Experiment"]["ID"], "NWB")
+            if not os.path.exists(path_to_nwb):
+                os.mkdir(path_to_nwb)
             io = NWBHDF5IO(
-                os.path.join(self.path, self.notebook["Experiment"]["ID"],
-                             self.notebook["Experiment"]["ID"] + "_Block-" + str(block) + '.nwb'),
+                os.path.join(path_to_nwb, self.notebook["Experiment"]["ID"] + "_Block-" + str(block) + '.nwb'),
                 mode='w')
             io.write(nwbfile)
             io.close()
