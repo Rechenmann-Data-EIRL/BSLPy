@@ -78,7 +78,6 @@ class Index:
                         ], width={"size": 3}),
                     dbc.Col(children=[html.Div(id="dashboard")])
                 ])
-
             ])
 
 
