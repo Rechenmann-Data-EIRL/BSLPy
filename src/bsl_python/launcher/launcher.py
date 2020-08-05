@@ -5,12 +5,12 @@ import webbrowser
 from datetime import datetime
 from functools import partial
 from threading import Timer
-from tkinter import Image, Label, W, SUNKEN, HORIZONTAL, E, N, S, filedialog
+from tkinter import Label, W, SUNKEN, HORIZONTAL, E, N, S, filedialog
 from tkinter.ttk import Progressbar
 
 import numpy as np
 import tdt
-from PIL import ImageTk
+from PIL import ImageTk, Image
 from dateutil.tz.tz import tzlocal
 from pynwb import NWBFile, NWBHDF5IO
 from pynwb.file import Subject
@@ -290,96 +290,14 @@ class Launcher(tk.Tk):
             self.show_buttons(compact_status)
 
     def compact_data(self):
-        self.progress_bar['value'] = 20
-        self.log.config(text="Load stimulation data")
-        self.update_idletasks()
+        self.reset_progress_bar()
+        self.update_progress_bar(0, "Load stimulation data")
         data = load_stimulation_data(os.path.join(self.path, self.notebook["Experiment"]["ID"]))
-        self.progress_bar['value'] += 20
-        self.log.config(text="Load sorted spike data")
-        self.update_idletasks()
+        self.update_progress_bar(20, "Load sorted spike data")
         data2 = load_spikes_data(os.path.join(self.path, self.notebook["Experiment"]["ID"]))
-
-        self.progress_bar['value'] += 20
-        self.update_idletasks()
-        previous_time = 0
-        penetration_numbers = []
-        cluster_shift = 0
-        current_shift = 0
+        self.update_progress_bar(20, "Compact blocks")
         for block in data2:
-            self.log.config(text="Save block " + str(block))
-            self.progress_bar['value'] += 40 / len(data2)
-            self.update_idletasks()
-            subject = Subject(age=str(self.notebook["Mouse"]["Age"]), genotype=self.notebook["Mouse"]["Strain"],
-                              species="Mouse",
-                              subject_id=self.notebook["Mouse"]["ID"], sex=self.notebook["Mouse"]["Gender"],
-                              weight=str(self.notebook["Mouse"]["Weight"]),
-                              date_of_birth=self.notebook["Mouse"]["DateOfBirth"])
-            nwbfile = NWBFile('', self.notebook["Experiment"]["ID"], datetime.now(tzlocal()),
-                              experimenter=self.notebook["Experiment"]["Experimenter"],
-                              lab='Brain Sound Lab',
-                              institution='University of Basel',
-                              experiment_description='',
-                              session_id=self.notebook["Experiment"]["ID"],
-                              subject=subject)
-
-            device = nwbfile.create_device(name="TDT")
-            cortical_region = str(list(np.unique(self.notebook["Electrophy"]["Cortical region"]))[0])
-            electrode_group = nwbfile.create_electrode_group(
-                self.notebook["Electrophy"]["Electrode ID"].replace('/', ''),
-                description=self.notebook["Electrophy"]["Electrode Type"],
-                location=cortical_region,
-                device=device)
-
-            for index in range(self.notebook["Electrophy"]["Nb channels"]):
-                # TODO: Replace index and position by electrode configuration
-                nwbfile.add_electrode(id=int(index),
-                                      x=1.0, y=2.0, z=3.0,
-                                      imp=float(-index),
-                                      location=cortical_region, filtering='none',
-                                      group=electrode_group)
-            for key in data[block]["epocs"].keys():
-                nwbfile.add_trial_column(name=key, description='Experiment trial')
-            index = 0
-            clusters = list(data2[block]["waveforms"]["clusters"][0])
-            end_time = data2[block]["spikes"][-1, 0]
-            nb_clusters = max(clusters)
-            if self.notebook["Trials"]["Penetration #"][block - 1] not in penetration_numbers:
-                cluster_shift += current_shift
-                penetration_numbers.append(self.notebook["Trials"]["Penetration #"][block - 1])
-            if nb_clusters > current_shift:
-                current_shift = nb_clusters
-            first_column = list(data[block]["epocs"].keys())[0]
-            for trial in range(len(data[block]["epocs"][first_column]["onset"])):
-                trial_parameters = {}
-                for key in data[block]["epocs"].keys():
-                    epocs = data[block]["epocs"]
-                    attribute = epocs[key]
-                    trial_parameters[key] = attribute["data"][index]
-                nwbfile.add_trial(start_time=float(data[block]["epocs"][first_column]["onset"][trial]),
-                                  stop_time=float(data[block]["epocs"][first_column]["offset"][trial]),
-                                  **trial_parameters)
-            for cluster in clusters:
-                indices = data2[block]["spikes"][:, 1] == cluster
-                if len(indices) > 0:
-                    spike_times = [x + previous_time for x in list(data2[block]["spikes"][indices, 0])]
-                    waveform_sd = list(data2[block]["waveforms"]["std"][0, index])
-                    waveform_mean = list(data2[block]["waveforms"]["waveforms"][0, index][0])
-                    electrodes = [x - 1 for x in list(np.unique(data2[block]["spikes"][indices, 3]))]
-                    index += 1
-                    nwbfile.add_unit(spike_times=spike_times,
-                                     waveform_sd=waveform_sd,
-                                     waveform_mean=waveform_mean,
-                                     electrodes=electrodes,
-                                     id=cluster_shift + int(cluster))
-            previous_time += end_time
-            path_to_nwb = os.path.join(self.path, self.notebook["Experiment"]["ID"], "NWB")
-            if not os.path.exists(path_to_nwb):
-                os.mkdir(path_to_nwb)
-            io = NWBHDF5IO(
-                os.path.join(path_to_nwb, self.notebook["Experiment"]["ID"] + "_Block-" + str(block) + '.nwb'),
-                mode='w')
-            io.write(nwbfile)
-            io.close()
+            self.compact_block(block, data, data2)
         list_block_compacted = data2.keys()
         list_block_compacted = sorted(list_block_compacted)
         compact_status = 0
@@ -388,6 +306,90 @@ class Launcher(tk.Tk):
         elif len(list_block_compacted) > 0:
             compact_status = 2
         self.show_buttons(compact_status)
+
+    def reset_progress_bar(self):
+        self.progress_bar['value'] = 0
+        self.log.config(text='')
+        self.update_idletasks()
+
+    def update_progress_bar(self, added_value, text):
+        self.progress_bar['value'] += added_value
+        self.log.config(text=text)
+        self.update()
+
+    def compact_block(self, block, data, data2):
+        self.update_progress_bar(round(40 / len(data2)), "Save block " + str(block))
+        subject = Subject(age=str(self.notebook["Mouse"]["Age"]), genotype=self.notebook["Mouse"]["Strain"],
+                          species="Mouse",
+                          subject_id=self.notebook["Mouse"]["ID"], sex=self.notebook["Mouse"]["Gender"],
+                          weight=str(self.notebook["Mouse"]["Weight"]),
+                          date_of_birth=self.notebook["Mouse"]["DateOfBirth"])
+        nwbfile = NWBFile('', identifier=str(block), session_start_time=datetime.now(tzlocal()),
+                          experimenter=self.notebook["Experiment"]["Experimenter"],
+                          lab='Brain Sound Lab',
+                          institution='University of Basel',
+                          experiment_description='',
+                          session_id=self.notebook["Experiment"]["ID"],
+                          subject=subject,
+                          protocol=self.notebook["Trials"]["StimulusSet"][block-1])
+        device = nwbfile.create_device(name="TDT")
+        cortical_region = str(list(np.unique(self.notebook["Electrophy"]["Cortical region"]))[0])
+        electrode_group = nwbfile.create_electrode_group(
+            self.notebook["Electrophy"]["Electrode ID"].replace('/', ''),
+            description=self.notebook["Electrophy"]["Electrode Type"],
+            location=cortical_region,
+            device=device)
+        for index in range(self.notebook["Electrophy"]["Nb channels"]):
+            # TODO: Replace index and position by electrode configuration
+            nwbfile.add_electrode(id=int(index),
+                                  x=1.0, y=2.0, z=3.0,
+                                  imp=float(-index),
+                                  location=cortical_region, filtering='none',
+                                  group=electrode_group)
+        nb_trials = 0
+        trial_key = ""
+        for key in data[block]["epocs"].keys():
+            if key== "coun" or key == "ChnA":
+                attribute = data[block]["epocs"][key]
+                nb_trials = len(attribute["data"])
+                trial_key = key
+        for key in data[block]["epocs"].keys():
+            attribute = data[block]["epocs"][key]
+            if len(attribute["data"]) == nb_trials:
+                nwbfile.add_trial_column(name=key, description='Experiment trial')
+
+        clusters = list(data2[block]["waveforms"]["clusters"][0])
+        for trial in range(nb_trials):
+            trial_parameters = {}
+            for key in data[block]["epocs"].keys():
+                attribute = data[block]["epocs"][key]
+                if len(attribute["data"]) == nb_trials:
+                    trial_parameters[key] = attribute["data"][trial]
+            nwbfile.add_trial(start_time=float(data[block]["epocs"][trial_key]["onset"][trial]),
+                              stop_time=float(data[block]["epocs"][trial_key]["offset"][trial]),
+                              **trial_parameters)
+        index = 0
+        for cluster in clusters:
+            indices = data2[block]["spikes"][:, 1] == cluster
+            if len(indices) > 0:
+                spike_times = [x for x in list(data2[block]["spikes"][indices, 0])]
+                waveform_sd = list(data2[block]["waveforms"]["std"][0, index])
+                waveform_mean = list(data2[block]["waveforms"]["waveforms"][0, index][0])
+                electrodes = [x - 1 for x in list(np.unique(data2[block]["spikes"][indices, 3]))]
+                index += 1
+                nwbfile.add_unit(spike_times=spike_times,
+                                 waveform_sd=waveform_sd,
+                                 waveform_mean=waveform_mean,
+                                 electrodes=electrodes,
+                                 id=int(cluster))
+        path_to_nwb = os.path.join(self.path, self.notebook["Experiment"]["ID"], "NWB")
+        if not os.path.exists(path_to_nwb):
+            os.mkdir(path_to_nwb)
+        io = NWBHDF5IO(
+            os.path.join(path_to_nwb, self.notebook["Experiment"]["ID"] + "_Block-" + str(block) + '.nwb'),
+            mode='w')
+        io.write(nwbfile)
+        io.close()
 
 
 def open_browser(port):
