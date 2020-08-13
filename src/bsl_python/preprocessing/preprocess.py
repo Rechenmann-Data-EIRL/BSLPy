@@ -2,9 +2,14 @@ import functools
 import math
 import operator
 import os
+
+import pandas
+import pynwb
+from hdmf.common import DynamicTable
+from pynwb.core import NWBTable, NWBDataInterface
 from scipy import signal
 import time
-from pynwb import NWBHDF5IO
+from pynwb import NWBHDF5IO, ProcessingModule
 import pandas as pd
 import numpy as np
 import plotly.io as pio
@@ -55,12 +60,12 @@ def signal_width(waveform, waveform_reverse, position, threshold):
     return half_dur + half_dur2
 
 
-def compute_waveform_analysis(nwbfile):
+def compute_waveform_analysis(units):
     waveform_analysis = {}
-    nb_units = len(nwbfile.units)
+    nb_units = len(units)
     fs = 24414.0625 / 1000
     for unit_index in range(nb_units):
-        waveform = nwbfile.units[unit_index].waveform_mean.tolist()[0].flatten()
+        waveform = units[unit_index].waveform_mean.tolist()[0].flatten()
         waveform_reverse = waveform[::-1]
         min_peak_value = min(waveform)
         min_peak_pos = np.where(waveform == min(waveform))[0][0]
@@ -91,11 +96,11 @@ def compute_waveform_analysis(nwbfile):
             through_duration = signal_width(-waveform, -waveform_reverse, second_max_peak_pos, 0) * 1 / fs
             spike_dur = peak_duration + through_duration
 
-        waveform_analysis[nwbfile.units.id[unit_index]] = {"pb_amp": min_peak_amplitude, "tb_amp": second_peak_amp,
-                                                           "p2t": peak_to_through, "p_rat": peak_ratio, "slope": slope,
-                                                           "width_half_peak": width_half_peak,
-                                                           "peak_dur": peak_duration, "through_dur":
-                                                               through_duration, "spike_dur": spike_dur}
+        waveform_analysis[units.id[unit_index]] = {"pb_amp": min_peak_amplitude, "tb_amp": second_peak_amp,
+                                                   "p2t": peak_to_through, "p_rat": peak_ratio, "slope": slope,
+                                                   "width_half_peak": width_half_peak,
+                                                   "peak_dur": peak_duration, "through_dur":
+                                                       through_duration, "spike_dur": spike_dur}
     return waveform_analysis
 
 
@@ -103,11 +108,27 @@ def compute_tuning_curve_analysis(all_spikes):
     return {}
 
 
+def create_module_from_activity(name, description, activity, frequency):
+    module = ProcessingModule(name=name, description=description)
+    for electrode in activity.keys():
+        module.add(
+            pynwb.base.TimeSeries('electrode' + str(electrode), activity[electrode], unit="spikes/s", rate=frequency,
+                                  comments="Each row corresponds to a specific trial"))
+    return module
+
+
+def save_file(path_to_file, nwbfile):
+    io = NWBHDF5IO(path_to_file, mode='w')
+    io.write(nwbfile)
+    io.close()
+
+
 if __name__ == '__main__':
     start_process_time = time.process_time()
-    nwb_io = NWBHDF5IO(os.path.join("C:/Users/jujud/Documents/Consulting/Data/191128EM/NWB", "191128EM_Block-1.nwb"),
-                       'r')
+    path_to_file = os.path.join("C:/Users/jujud/Documents/Consulting/Data/191128EM/NWB", "191128EM_Block-1.nwb")
+    nwb_io = NWBHDF5IO(path_to_file, 'r')
     nwbfile = nwb_io.read()
+    nwb_io.close()
     spike_times = []
     unit_indices = []
     electrodes = []
@@ -199,7 +220,7 @@ if __name__ == '__main__':
     peak_latency = {
         electrode: (np.where(mean_filtered_activity[electrode] == peak_amplitude[electrode])[0][0] - 200) * 0.001
         for electrode in list_electrodes}
-    waveform_analysis = compute_waveform_analysis(nwbfile)
+    waveform_analysis = compute_waveform_analysis(nwbfile.units)
     tuning_curve_analysis = compute_tuning_curve_analysis(all_spikes, )
     nStdDev = 1 / 4
     onset_min_time = 200
@@ -229,5 +250,29 @@ if __name__ == '__main__':
 
     time_elapsed = (time.process_time() - start_process_time)
     print("Compute parameters - elapsed time ", time_elapsed)
+    all_spiking_activity_module = ProcessingModule(name='all_spiking_activities', description='Spiking activity')
+    fs = 24414.0625 / 1000
+    all_spiking_activity_module.add_container(
+        create_module_from_activity(name='spiking_activity', description='Spiking activity per trial and electrode',
+                                    activity=activity, frequency=fs))
+    all_spiking_activity_module.add_container(create_module_from_activity(name='filtered_activity',
+                                                                          description='Filtered spiking activity with hanning window per trial and electrode',
+                                                                          activity=filtered_activity, frequency=fs))
+    all_spiking_activity_module.add_container(create_module_from_activity(name='mean_spiking_activity',
+                                                                          description='Average spiking activity per electrode',
+                                                                          activity=mean_activity, frequency=fs))
+    all_spiking_activity_module.add_container(create_module_from_activity(name='mean_filtered_activity',
+                                                                          description='Average filtered spiking activity per electrode',
+                                                                          activity=mean_filtered_activity,
+                                                                          frequency=fs))
+    activity_parameters = pd.DataFrame.from_dict({"electrode": list_electrodes,
+                                                  "mean_spontaneous_activity": list(mean_spontaneous_activity.values()),
+                                                  "std_spontaneous_activity": list(std_spontaneous_activity.values()),
+                                                  "mean_post_stim": list(mean_post_stim_activity.values()),
+                                                  "std_post_stim": list(std_post_stim_activity.values())})
+    all_spiking_activity_module.add(DynamicTable.from_dataframe(activity_parameters, name="parameters"))
+
+    nwbfile.add_processing_module(all_spiking_activity_module)
+    save_file(path_to_file, nwbfile)
     Dashboard.create(all_spikes, list_electrodes, mean_spontaneous_activity, peak_amplitude, nwbfile.units, trf,
                      mean_filtered_activity)
