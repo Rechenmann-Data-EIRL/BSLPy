@@ -10,15 +10,16 @@ from src.bsl_python.GUI.app import app
 
 
 class ExperimentInfo:
-    def get_html(self, file):
+    @staticmethod
+    def get_html(file):
         if file is None:
-            return self.get_empty_html()
+            return ExperimentInfo.get_empty_html()
         return html.Div(id="experiment-info-panel",
-                        children=[dbc.Label("Lab: "), dbc.Label(file.lab), html.Br(),
-                                  dbc.Label("Institution: "), dbc.Label(file.institution), html.Br(),
-                                  dbc.Label("Experimenter: "), dbc.Label(file.experimenter), html.Br(),
-                                  dbc.Label("Experiment ID: "), dbc.Label(file.session_id), html.Br(),
-                                  dbc.Label("Protocol: "), dbc.Label(file.protocol)])
+                        children=[dbc.Label("Lab: " + file.lab), html.Br(),
+                                  dbc.Label("Institution: " + file.institution), html.Br(),
+                                  dbc.Label("Experimenter: " + file.experimenter[0]), html.Br(),
+                                  dbc.Label("Experiment ID: " + file.session_id), html.Br(),
+                                  dbc.Label("Protocol: " + file.protocol)])
 
     @staticmethod
     def get_empty_html():

@@ -3,10 +3,8 @@ import math
 import operator
 import os
 
-import pandas
 import pynwb
 from hdmf.common import DynamicTable
-from pynwb.core import NWBTable, NWBDataInterface
 from scipy import signal
 import time
 from pynwb import NWBHDF5IO, ProcessingModule
@@ -62,10 +60,10 @@ def signal_width(waveform, waveform_reverse, position, threshold):
 
 def compute_waveform_analysis(units):
     waveform_analysis = {}
-    nb_units = len(units)
     fs = 24414.0625 / 1000
-    for unit_index in range(nb_units):
-        waveform = units[unit_index].waveform_mean.tolist()[0].flatten()
+    all_units = units.to_dataframe()
+    for unit_index, unit in all_units.iterrows():
+        waveform = unit.waveform_mean
         waveform_reverse = waveform[::-1]
         min_peak_value = min(waveform)
         min_peak_pos = np.where(waveform == min(waveform))[0][0]
@@ -96,11 +94,11 @@ def compute_waveform_analysis(units):
             through_duration = signal_width(-waveform, -waveform_reverse, second_max_peak_pos, 0) * 1 / fs
             spike_dur = peak_duration + through_duration
 
-        waveform_analysis[units.id[unit_index]] = {"pb_amp": min_peak_amplitude, "tb_amp": second_peak_amp,
-                                                   "p2t": peak_to_through, "p_rat": peak_ratio, "slope": slope,
-                                                   "width_half_peak": width_half_peak,
-                                                   "peak_dur": peak_duration, "through_dur":
-                                                       through_duration, "spike_dur": spike_dur}
+        waveform_analysis[unit_index] = {"pb_amp": min_peak_amplitude, "tb_amp": second_peak_amp,
+                                         "p2t": peak_to_through, "p_rat": peak_ratio, "slope": slope,
+                                         "width_half_peak": width_half_peak,
+                                         "peak_dur": peak_duration, "through_dur":
+                                             through_duration, "spike_dur": spike_dur}
     return waveform_analysis
 
 
@@ -117,86 +115,71 @@ def create_module_from_activity(name, description, activity, frequency):
     return module
 
 
-def save_file(path_to_file, nwbfile):
-    io = NWBHDF5IO(path_to_file, mode='w')
-    io.write(nwbfile)
-    io.close()
-
-
-if __name__ == '__main__':
+def preprocess_nwbfile(path, filename):
+    path_to_file = os.path.join(path, filename)
     start_process_time = time.process_time()
-    path_to_file = os.path.join("C:/Users/jujud/Documents/Consulting/Data/191128EM/NWB", "191128EM_Block-1.nwb")
     nwb_io = NWBHDF5IO(path_to_file, 'r')
     nwbfile = nwb_io.read()
-    nwb_io.close()
     spike_times = []
     unit_indices = []
     electrodes = []
-    units = range(len(nwbfile.units))
-    for unit_index in units:
-        unit = nwbfile.units[unit_index]
+    all_units = nwbfile.units.to_dataframe()
+    for unit in all_units.itertuples():
         if len(unit) > 0:
-            spikes = unit["spike_times"].tolist()[0].tolist()
-            electrode = unit["electrodes"].tolist()[0].index[0]
+            spikes = unit.spike_times.tolist()
+            electrode = unit.electrodes.imp.index.tolist()[0]
             spike_times += spikes
-            unit_indices += [nwbfile.units.id[unit_index]] * len(spikes)
+            unit_indices += [unit[0]] * len(spikes)
             electrodes += [electrode] * len(spikes)
     trials = range(len(nwbfile.trials))
-    trial_indices = [-1] * len(spike_times)
-    spike_times_per_trial = [-1] * len(spike_times)
+    trial_indices = np.array([-1.0] * len(spike_times))
+    spike_times_per_trial = np.array([-1.0] * len(spike_times))
+    spike_times = np.array(spike_times)
     additional_columns = [column for column in nwbfile.trials.colnames if column not in ["start_time", "stop_time"]]
     additional_data = dict()
-
     for key in additional_columns:
-        additional_data[key] = [None] * len(spike_times)
+        additional_data[key] = np.array([None] * len(spike_times))
     info = [flatten_dict(nwbfile.trials[trial_index].to_dict()) for trial_index in trials]
     for trial_index in trials:
         start_time = info[trial_index]["start_time"]
-        spikes = [spike_index for spike_index in range(len(spike_times)) if
-                  start_time - 0.2 < spike_times[spike_index] < start_time + 3.5]
-        for spike in spikes:
-            trial_indices[spike] = trial_index
-            spike_times_per_trial[spike] = spike_times[spike] - start_time
-            for column in additional_data.keys():
-                additional_data[column][spike] = info[trial_index][column]
+        spikes = np.where(np.logical_and(start_time - 0.2 < spike_times, spike_times < start_time + 3.5))
+        trial_indices[spikes] = trial_index
+        spike_times_per_trial[spikes] = spike_times[spikes] - start_time
+        for column in additional_data.keys():
+            additional_data[column][spikes] = info[trial_index][column]
+    trial_indices = list(trial_indices)
+    spike_times_per_trial = list(spike_times_per_trial)
+    for column in additional_data.keys():
+        additional_data[column] = list(additional_data[column])
     d = {'spike_times': spike_times, 'electrodes': electrodes, "unit": unit_indices, 'trials': trial_indices,
          'trial_time': spike_times_per_trial, **additional_data}
     all_spikes = pd.DataFrame.from_dict(d)
     all_spikes.dropna(inplace=True)
-
-    time_elapsed = (time.process_time() - start_process_time)
-    print("Build dataframe - elapsed time ", time_elapsed)
+    print("Build dataframe - elapsed time ", (time.process_time() - start_process_time))
     start_process_time = time.process_time()
     tmax = 1
     tmin = -0.2
     nBins = round((tmax - tmin) / 0.001)
-
     activity = dict()
     activity_0db = dict()
     stimulus_name = "decB"
     list_electrodes = range(len(nwbfile.electrodes))
-    list_electrodes = [62]
-    list_trials = list(np.unique(all_spikes["trials"]))
+    # list_electrodes = [60, 61, 62, 63]
+    list_trials = [*range(len(info))]
     for electrode in list_electrodes:
-        electrode_spikes = all_spikes[all_spikes["electrodes"] == electrode]
-        activity[electrode] = [np.histogram(electrode_spikes['trial_time'][(electrode_spikes["trials"] == trial)],
-                                            nBins, range=(tmin, tmax))[0] * 1000 for trial in list_trials]
+        electrode_spikes = all_spikes[all_spikes.electrodes.eq(electrode)]
+        activity[electrode] = np.array([
+            np.histogram(electrode_spikes['trial_time'][electrode_spikes.trials.eq(trial)], nBins, range=(tmin, tmax))[
+                0] * 1000 for trial in list_trials])
     time_elapsed = (time.process_time() - start_process_time)
     print("Compute activity rate - elapsed time ", time_elapsed)
     start_process_time = time.process_time()
     spontaneous_activity = get_activity(activity, -0.15, -0.05)
     post_stim_activity = get_activity(activity, 0.3, 0.5)
-
-    mean_spontaneous_activity = dict()
-    std_spontaneous_activity = dict()
-    mean_post_stim_activity = dict()
-    std_post_stim_activity = dict()
-    for electrode in activity.keys():
-        mean_spontaneous_activity[electrode] = np.mean(spontaneous_activity[electrode])
-        std_spontaneous_activity[electrode] = np.std(spontaneous_activity[electrode])
-        mean_post_stim_activity[electrode] = np.mean(post_stim_activity[electrode])
-        std_post_stim_activity[electrode] = np.std(post_stim_activity[electrode])
-
+    mean_spontaneous_activity = {electrode: np.mean(spontaneous_activity[electrode]) for electrode in activity.keys()}
+    std_spontaneous_activity = {electrode: np.std(spontaneous_activity[electrode]) for electrode in activity.keys()}
+    mean_post_stim_activity = {electrode: np.mean(post_stim_activity[electrode]) for electrode in activity.keys()}
+    std_post_stim_activity = {electrode: np.std(post_stim_activity[electrode]) for electrode in activity.keys()}
     # A beta value of 14 is probably a good starting point. Note that as beta gets large, the window narrows,
     # and so the number of samples needs to be large enough to sample the increasingly narrow spike, otherwise NaNs
     # will get returned. Most references to the Kaiser window come from the signal processing literature, where it is
@@ -208,8 +191,8 @@ if __name__ == '__main__':
     start_process_time = time.process_time()
     window = np.hanning(9)  # window length of 15 points and a beta of 14
     window = window / np.sum(window)
-    filtered_activity = {electrode: [signal.filtfilt(window, 1, activity[electrode][trial], method="gust").tolist() for
-                                     trial in list_trials] for electrode in list_electrodes}
+    filtered_activity = {electrode: signal.filtfilt(window, 1, activity[electrode], axis=1, method="gust").tolist() for electrode in list_electrodes}
+    print("Filtered activity - elapsed time ", (time.process_time() - start_process_time))
 
     mean_activity = {electrode: np.mean(np.array([activity[electrode][trial] for trial in list_trials]), axis=0) for
                      electrode in list_electrodes}
@@ -220,8 +203,8 @@ if __name__ == '__main__':
     peak_latency = {
         electrode: (np.where(mean_filtered_activity[electrode] == peak_amplitude[electrode])[0][0] - 200) * 0.001
         for electrode in list_electrodes}
-    waveform_analysis = compute_waveform_analysis(nwbfile.units)
-    tuning_curve_analysis = compute_tuning_curve_analysis(all_spikes, )
+    waveform_analysis = pd.DataFrame.from_dict(compute_waveform_analysis(nwbfile.units))
+    # tuning_curve_analysis = compute_tuning_curve_analysis(all_spikes, )
     nStdDev = 1 / 4
     onset_min_time = 200
     onset_max_time = 450
@@ -247,32 +230,67 @@ if __name__ == '__main__':
                                                    [[electrode] * len(info) for electrode in list_electrodes], [])}
     df = pd.DataFrame(stim_activity)
     trf = df.groupby(['electrode', 'freq', 'decB']).mean()
-
     time_elapsed = (time.process_time() - start_process_time)
     print("Compute parameters - elapsed time ", time_elapsed)
-    all_spiking_activity_module = ProcessingModule(name='all_spiking_activities', description='Spiking activity')
     fs = 24414.0625 / 1000
-    all_spiking_activity_module.add_container(
+    if "mean_filtered_activity" in nwbfile.processing:
+        nwbfile.processing.pop("mean_filtered_activity")
+    if "mean_spiking_activity" in nwbfile.processing:
+        nwbfile.processing.pop("mean_spiking_activity")
+    if "filtered_activity" in nwbfile.processing:
+        nwbfile.processing.pop("filtered_activity")
+    if "spiking_activity" in nwbfile.processing:
+        nwbfile.processing.pop("spiking_activity")
+    if "parameters" in nwbfile.processing:
+        nwbfile.processing.pop("parameters")
+    if "spikes" in nwbfile.processing:
+        nwbfile.processing.pop("spikes")
+    if "trf" in nwbfile.processing:
+        nwbfile.processing.pop("trf")
+    if "waveform_analysis" in nwbfile.processing:
+        nwbfile.processing.pop("waveform_analysis")
+    nwbfile.add_processing_module(
         create_module_from_activity(name='spiking_activity', description='Spiking activity per trial and electrode',
                                     activity=activity, frequency=fs))
-    all_spiking_activity_module.add_container(create_module_from_activity(name='filtered_activity',
-                                                                          description='Filtered spiking activity with hanning window per trial and electrode',
-                                                                          activity=filtered_activity, frequency=fs))
-    all_spiking_activity_module.add_container(create_module_from_activity(name='mean_spiking_activity',
-                                                                          description='Average spiking activity per electrode',
-                                                                          activity=mean_activity, frequency=fs))
-    all_spiking_activity_module.add_container(create_module_from_activity(name='mean_filtered_activity',
-                                                                          description='Average filtered spiking activity per electrode',
-                                                                          activity=mean_filtered_activity,
-                                                                          frequency=fs))
+    nwbfile.add_processing_module(create_module_from_activity(name='filtered_activity',
+                                                              description='Filtered spiking activity with hanning window per trial and electrode',
+                                                              activity=filtered_activity, frequency=fs))
+    nwbfile.add_processing_module(create_module_from_activity(name='mean_spiking_activity',
+                                                              description='Average spiking activity per electrode',
+                                                              activity=mean_activity, frequency=fs))
+    nwbfile.add_processing_module(create_module_from_activity(name='mean_filtered_activity',
+                                                              description='Average filtered spiking activity per electrode',
+                                                              activity=mean_filtered_activity,
+                                                              frequency=fs))
     activity_parameters = pd.DataFrame.from_dict({"electrode": list_electrodes,
                                                   "mean_spontaneous_activity": list(mean_spontaneous_activity.values()),
+                                                  "activity_peak_amplitude": list(peak_amplitude.values()),
+                                                  "activity_peak_latency": list(peak_latency.values()),
                                                   "std_spontaneous_activity": list(std_spontaneous_activity.values()),
                                                   "mean_post_stim": list(mean_post_stim_activity.values()),
                                                   "std_post_stim": list(std_post_stim_activity.values())})
-    all_spiking_activity_module.add(DynamicTable.from_dataframe(activity_parameters, name="parameters"))
+    parameters = ProcessingModule(name='parameters', description='All extracted parameters')
+    parameters.add_container(DynamicTable.from_dataframe(activity_parameters, name="activity_parameters"))
+    spikes_module = ProcessingModule(name='spikes', description='All extracted spikes')
+    spikes_module.add_container(DynamicTable.from_dataframe(all_spikes, name="spikes"))
+    trf_module = ProcessingModule(name='trf', description='TRF')
+    trf_module.add_container(DynamicTable.from_dataframe(trf.reset_index(), name="trf"))
+    waveform_module = ProcessingModule(name='waveform_analysis', description='Waveform analysis')
+    waveform_module.add_container(DynamicTable.from_dataframe(waveform_analysis.transpose(), name="waveform_analysis"))
+    nwbfile.add_processing_module(parameters)
+    nwbfile.add_processing_module(spikes_module)
+    nwbfile.add_processing_module(trf_module)
+    nwbfile.add_processing_module(waveform_module)
+    export_filename = filename.replace('.nwb', '_new.nwb')
+    new_path_to_file = os.path.join(path, export_filename)
+    with NWBHDF5IO(new_path_to_file, mode='w') as export_io:
+        export_io.export(src_io=nwb_io, nwbfile=nwbfile)
+    nwb_io.close()
+    os.remove(path_to_file)
+    os.rename(new_path_to_file, path_to_file)
 
-    nwbfile.add_processing_module(all_spiking_activity_module)
-    save_file(path_to_file, nwbfile)
-    Dashboard.create(all_spikes, list_electrodes, mean_spontaneous_activity, peak_amplitude, nwbfile.units, trf,
-                     mean_filtered_activity)
+
+if __name__ == '__main__':
+    filename = "191128EM_Block-1.nwb"
+    path = "C:/Users/jujud/Documents/Consulting/Data/191128EM/NWB"
+    preprocess_nwbfile(path, filename)

@@ -3,7 +3,6 @@ import threading
 import tkinter as tk
 import webbrowser
 from datetime import datetime
-from functools import partial
 from threading import Timer
 from tkinter import Label, W, SUNKEN, HORIZONTAL, E, N, S, filedialog
 from tkinter.ttk import Progressbar
@@ -17,7 +16,9 @@ from pynwb.file import Subject
 from scipy.io import loadmat
 
 from src.bsl_python.GUI.app import app
+from src.bsl_python.GUI.dashboard import Dashboard
 from src.bsl_python.lab_book_loader import LabBookLoader
+from src.bsl_python.preprocessing.preprocess import preprocess_nwbfile
 
 
 class Launcher(tk.Tk):
@@ -77,7 +78,7 @@ class Launcher(tk.Tk):
                                 text="Open visualization",
                                 width=25,
                                 height=2,
-                                command=visualize_data)
+                                command=lambda: visualize_data(self.path, self.notebook))
         button_dash.grid(row=2, column=1, padx=10, pady=10)
 
         load = Image.open("res/preprocessing.png").resize((75, 75), Image.ANTIALIAS)
@@ -93,7 +94,7 @@ class Launcher(tk.Tk):
                                       text="Pre-process data and save",
                                       width=25,
                                       height=2,
-                                      command=visualize_data)
+                                      command=lambda: preprocess_data(self.path, self.notebook))
         button_preprocess.grid(row=2, column=2, padx=10, pady=10)
         self.content_frame.grid(row=0, column=0, pady=10)
 
@@ -221,12 +222,13 @@ class Launcher(tk.Tk):
                                      text="Visualize and save",
                                      width=25,
                                      height=2,
-                                     command=partial(visualize_data),
+                                     command=lambda: visualize_data(self.path, self.notebook),
                                      state="disabled" if compact_status == 0 else "normal")
         button_preprocess = tk.Button(master=self.button_frame,
                                       text="Pre-process and save",
                                       width=25,
                                       height=2,
+                                      command=lambda: preprocess_data(self.path, self.notebook),
                                       state="disabled" if compact_status == 0 else "normal")
         img.grid(row=0, column=0)
         button_compact.grid(row=1, column=0, padx=10)
@@ -440,12 +442,27 @@ def load_spikes_data(path):
     return all_data
 
 
-def launch_server():
+def launch_server(path, notebook):
     port = 8050
     Timer(1.5, open_browser, [port]).start()
+    nwb_path = os.path.join(path, notebook["Experiment"]["ID"], "NWB")
+    nwbfiles = {"Block " + (file.split('-')[-1].replace('.nwb', '')).zfill(2): os.path.join(nwb_path, file) for file in os.listdir(nwb_path) if ".nwb" in file}
+    c_file = list(nwbfiles.keys())[0]
+    nwb_io = NWBHDF5IO(nwbfiles[c_file], 'r')
+    nwbfile = nwb_io.read()
+
+    Dashboard.create(nwbfile, nwbfiles, notebook)
     app.run_server(debug=False, port=port)
 
 
-def visualize_data():
-    x = threading.Thread(target=launch_server)
+def visualize_data(path, notebook):
+    x = threading.Thread(target=launch_server, args=(path, notebook))
     x.start()
+
+
+def preprocess_data(path, notebook):
+    nwb_path = os.path.join(path, notebook["Experiment"]["ID"], "NWB")
+    for file in os.listdir(nwb_path):
+        print(file)
+        if ".nwb" in file:
+            preprocess_nwbfile(nwb_path, file)
