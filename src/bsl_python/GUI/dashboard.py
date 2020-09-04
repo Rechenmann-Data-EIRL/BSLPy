@@ -45,6 +45,7 @@ class Dashboard:
 
     @staticmethod
     def create_layout(activity_parameters, electrode_list, electrode, notebook):
+        global nwbfile
         trf = nwbfile.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
             ['electrode', 'freq', 'decB']).mean()
         all_channel_trf_fig = all_channels_trf(trf, electrode_list)
@@ -95,7 +96,7 @@ class Dashboard:
                 dcc.Graph(
                     id='all_channel_trf',
                     figure=all_channel_trf_fig,
-                    style={"height": "97vh"}
+                    style={"height": "98vh"}
                 )],
                 width={"size": 4})
         ],
@@ -104,17 +105,16 @@ class Dashboard:
     @staticmethod
     def create_middle_panel_figures(electrode):
         start_process_time = time.process_time()
-        activity_parameters = nwbfile.processing["parameters"].data_interfaces[
-            "activity_parameters"].to_dataframe().set_index("electrode")
         all_spikes = nwbfile.processing["spikes"].data_interfaces["spikes"].to_dataframe()
-        spontaneous_rate_mean = activity_parameters["mean_spontaneous_activity"]
-        peak_amplitude = activity_parameters["activity_peak_amplitude"]
         trf = nwbfile.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
             ['electrode', 'freq', 'decB']).mean()
         mean_filtered_activity = nwbfile.processing["mean_filtered_activity"].data_interfaces
         raster_fig = raster_plot(all_spikes, electrode)
         psth_fig = psth_plot(all_spikes, mean_filtered_activity, electrode)
-        trf_fig = trf_plot(trf, spontaneous_rate_mean, peak_amplitude, electrode)
+        cleaned_trf = nwbfile.processing["trf"].data_interfaces["processed_trf"]["cleaned_trf"]
+        filtered_trf = nwbfile.processing["trf"].data_interfaces["processed_trf"]["filtered_trf"]
+        trf_parameters = nwbfile.processing["trf"].data_interfaces["trf_parameters"].to_dataframe()
+        trf_fig = trf_plot(trf, cleaned_trf, filtered_trf, trf_parameters, electrode)
 
         waveform_fig = waveform_plot(nwbfile.units, electrode)
         print("Final Plot - elapsed time ", (time.process_time() - start_process_time))
@@ -122,7 +122,7 @@ class Dashboard:
             dcc.Graph(
                 id='raster',
                 figure=raster_fig,
-                style={"height": "37vh"}
+                style={"height": "38vh"}
             ),
             dcc.Graph(
                 id='psth',
@@ -144,6 +144,7 @@ class Dashboard:
 
 @app.callback(
     [dash.dependencies.Output('middle_panel', 'children'),
+     dash.dependencies.Output('all_channel_trf', 'figure'),
      dash.dependencies.Output('parameters', 'children'),
      dash.dependencies.Output('warning-toast', 'is_open'),
      dash.dependencies.Output('warning-toast', 'children')],
@@ -151,22 +152,30 @@ class Dashboard:
     prevent_initial_call=True)
 def change_electrode(electrode, file):
     global c_file, nwbfile
+    all_channel_trf_fig = dash.no_update
+    changed_file = False
     if file != c_file:
         c_file = file
         nwb_io = NWBHDF5IO(nwbfiles[c_file], 'r')
         nwbfile = nwb_io.read()
+        changed_file = True
     if len(nwbfile.processing) > 0:
         activity_parameters = nwbfile.processing["parameters"].data_interfaces[
             "activity_parameters"].to_dataframe().set_index("electrode")
+        if changed_file:
+            trf = nwbfile.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
+                ['electrode', 'freq', 'decB']).mean()
+            electrode_list = list(activity_parameters.index.values)
+            all_channel_trf_fig = all_channels_trf(trf, electrode_list)
         params = pandas.DataFrame.from_dict({"Parameter": activity_parameters.columns,
                                              "Value": activity_parameters.loc[int(electrode)].values.round(2)})
-        return Dashboard.create_middle_panel_figures(electrode), [dash_table.DataTable(
+        return Dashboard.create_middle_panel_figures(electrode), all_channel_trf_fig, [dash_table.DataTable(
             id='parameters_table',
             columns=[{"name": i, "id": i} for i in params.columns],
             data=params.to_dict('records'),
             style_cell={"color": "black"}
         )], dash.no_update, dash.no_update
-    return dash.no_update, dash.no_update, True, [html.P("No pre-processing data was found for this block", className="mb-0")]
+    return [], all_channel_trf_fig, [], True, [html.P("No pre-processing data was found for this block", className="mb-0")]
 
 
 def raster_plot(all_spikes, electrode):
@@ -230,7 +239,7 @@ def psth_plot(all_spikes, mean_filtered_activity_rate, electrode):
     return new_fig
 
 
-def trf_plot(trf, spontaneous_rate_mean, peak_amplitude, electrode):
+def trf_plot(trf, cleaned_trf, filtered_trf, trf_parameters, electrode):
     levels = trf.index.levels
     trf_fig = make_subplots(rows=1, cols=3)
     electrode_index = levels[0].tolist().index(electrode)
@@ -238,7 +247,10 @@ def trf_plot(trf, spontaneous_rate_mean, peak_amplitude, electrode):
                      (electrode_index + 1) * len(levels[1]) * len(levels[2])))
     data = trf.iloc[loc]
     trf_matrix = np.reshape(data.values, (len(levels[1]), len(levels[2]))).transpose()
-    add_trf_fig_for_electrode(electrode, levels, peak_amplitude, spontaneous_rate_mean, trf_fig, trf_matrix)
+    parameters = trf_parameters.iloc[electrode_index]
+    clean_trf = cleaned_trf[electrode_index]
+    filter_trf = filtered_trf[electrode_index]
+    add_trf_fig_for_electrode(parameters, levels, clean_trf, filter_trf, trf_fig, trf_matrix)
     trf_fig.update_layout(coloraxis=dict(colorscale='Haline'), showlegend=False, margin=dict(l=10, r=10, b=10, t=10))
     trf_fig.update_layout(yaxis=dict(scaleanchor="x", scaleratio=1), yaxis2=dict(scaleanchor="x", scaleratio=1),
                           yaxis3=dict(scaleanchor="x", scaleratio=1), template="plotly_dark")
@@ -264,7 +276,6 @@ def all_channels_trf(trf, list_electrodes):
         row = electrode % nb_rows
         column = math.floor(electrode / nb_rows)
         all_channel_fig.add_trace(all_channel_trf_map, row=row + 1, col=column + 1)
-        all_channel_fig.update_yaxes(scaleanchor="x", scaleratio=1, row=row + 1, col=column + 1)
         index += 1
     all_channel_fig.update_layout(coloraxis=dict(colorscale='Haline'), showlegend=False, template="plotly_dark")
     all_channel_fig.update_yaxes(showgrid=False, zeroline=False, linecolor='black', showticklabels=False, ticks='')
@@ -272,29 +283,17 @@ def all_channels_trf(trf, list_electrodes):
     return all_channel_fig
 
 
-def add_trf_fig_for_electrode(electrode, levels, peak_amplitude, spontaneous_rate_mean, trf_fig, trf_matrix):
-    filtered_trf = scipy.signal.medfilt2d(trf_matrix, (3, 3))
-    cleaned_trf = filtered_trf - spontaneous_rate_mean[electrode]
-    cleaned_trf[cleaned_trf < peak_amplitude[electrode] * 0.2] = 0
-    summed_cleaned_trf_freq = np.sum(cleaned_trf, 0).tolist()
-    summed_cleaned_trf_intensity = np.sum(cleaned_trf, 1).tolist()
-    index_BF = summed_cleaned_trf_freq.index(max(summed_cleaned_trf_freq))
-    index_THRCF = next(
-        (index for index in range(len(summed_cleaned_trf_intensity)) if summed_cleaned_trf_intensity[index] > 0),
-        None)
-    index_THR = next((index for index in range(len(cleaned_trf[:, index_BF])) if cleaned_trf[index, index_BF] > 0),
-                     None)
-    max_cleaned_trf = cleaned_trf[index_THRCF, :].max()
-    index_CF = None
-    if index_THRCF is not None:
-        index_CF = next((index for index in range(len(cleaned_trf[index_THRCF, :])) if
-                         cleaned_trf[index_THRCF, index] == max_cleaned_trf), None)
-    trf_map = go.Heatmap(z=trf_matrix, coloraxis="coloraxis", name="Electrode_" + str(electrode))
-    filtered_trf_map = go.Heatmap(z=filtered_trf, coloraxis="coloraxis", name="Electrode_" + str(electrode))
-    cleaned_trf_map = go.Heatmap(z=cleaned_trf, coloraxis="coloraxis", name="Electrode_" + str(electrode))
+def add_trf_fig_for_electrode(trf_parameters, levels, cleaned_trf, filtered_trf, trf_fig, trf_matrix):
+    trf_map = go.Heatmap(z=trf_matrix, coloraxis="coloraxis", name="TRF_map")
+    filtered_trf_map = go.Heatmap(z=filtered_trf, coloraxis="coloraxis", name="Filtered_TRF_map")
+    cleaned_trf_map = go.Heatmap(z=cleaned_trf, coloraxis="coloraxis", name="Cleaned_TRF_map")
     trf_fig.add_trace(trf_map, row=1, col=1)
     trf_fig.add_trace(filtered_trf_map, row=1, col=2)
     trf_fig.add_trace(cleaned_trf_map, row=1, col=3)
+    index_BF = levels[1].tolist().index(trf_parameters["BF"])
+    index_THR = levels[2].tolist().index(trf_parameters["THR"])
+    index_CF = levels[1].tolist().index(trf_parameters["CF"])
+    index_THRCF = levels[2].tolist().index(trf_parameters["ThrCF"])
     if index_BF is not None and index_THR is not None:
         trf_fig.add_shape(
             type="line", xref="x", yref="y", x0=index_BF, y0=index_THR, x1=index_BF, y1=len(levels[2]) - 1,

@@ -13,6 +13,7 @@ import numpy as np
 import plotly.io as pio
 
 from src.bsl_python.GUI.dashboard import Dashboard
+from src.bsl_python.preprocessing.TuningReceptorField import TuningReceptorField
 
 pio.templates.default = "plotly_dark"
 pd.options.plotting.backend = "plotly"
@@ -164,7 +165,7 @@ def preprocess_nwbfile(path, filename):
     activity_0db = dict()
     stimulus_name = "decB"
     list_electrodes = range(len(nwbfile.electrodes))
-    # list_electrodes = [60, 61, 62, 63]
+    list_electrodes = [60, 61, 62, 63]
     list_trials = [*range(len(info))]
     for electrode in list_electrodes:
         electrode_spikes = all_spikes[all_spikes.electrodes.eq(electrode)]
@@ -218,18 +219,22 @@ def preprocess_nwbfile(path, filename):
               in list_electrodes}
     duration = {electrode: offset[electrode] - onset[electrode] if offset[electrode] is not None and onset[
         electrode] is not None else 1 for electrode in list_electrodes}
+
+    feature_1_name = 'freq' if 'freq' in info[0] else 'ChnA'
+    feature_2_name = 'decB' if 'decB' in info[0] else 'AmpA'
+
     stim_activity = {'activity': functools.reduce(operator.iconcat, [
         np.sum(get_activity_for_electrode(activity, electrode, 0.01, 0.06,
                                           np.max(list_trials) + 1),
                1) * 0.001 / 0.05 for electrode in list_electrodes], []),
-                     'freq': functools.reduce(operator.iconcat,
-                                              [[row["freq"] for row in info] for electrode in list_electrodes], []),
-                     'decB': functools.reduce(operator.iconcat,
-                                              [[row["decB"] for row in info] for electrode in list_electrodes], []),
+                     feature_1_name: functools.reduce(operator.iconcat,
+                                              [[row[feature_1_name] for row in info] for electrode in list_electrodes], []),
+                     feature_2_name: functools.reduce(operator.iconcat,
+                                              [[row[feature_2_name] for row in info] for electrode in list_electrodes], []),
                      'electrode': functools.reduce(operator.iconcat,
                                                    [[electrode] * len(info) for electrode in list_electrodes], [])}
-    df = pd.DataFrame(stim_activity)
-    trf = df.groupby(['electrode', 'freq', 'decB']).mean()
+    trf = TuningReceptorField(filter_size=3)
+    trf_module = trf.get_module(stim_activity, list(mean_spontaneous_activity.values()), list(peak_amplitude.values()), list_electrodes, feature_1_name, feature_2_name)
     time_elapsed = (time.process_time() - start_process_time)
     print("Compute parameters - elapsed time ", time_elapsed)
     fs = 24414.0625 / 1000
@@ -273,8 +278,6 @@ def preprocess_nwbfile(path, filename):
     parameters.add_container(DynamicTable.from_dataframe(activity_parameters, name="activity_parameters"))
     spikes_module = ProcessingModule(name='spikes', description='All extracted spikes')
     spikes_module.add_container(DynamicTable.from_dataframe(all_spikes, name="spikes"))
-    trf_module = ProcessingModule(name='trf', description='TRF')
-    trf_module.add_container(DynamicTable.from_dataframe(trf.reset_index(), name="trf"))
     waveform_module = ProcessingModule(name='waveform_analysis', description='Waveform analysis')
     waveform_module.add_container(DynamicTable.from_dataframe(waveform_analysis.transpose(), name="waveform_analysis"))
     nwbfile.add_processing_module(parameters)

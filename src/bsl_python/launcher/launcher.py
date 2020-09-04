@@ -94,7 +94,7 @@ class Launcher(tk.Tk):
                                       text="Pre-process data and save",
                                       width=25,
                                       height=2,
-                                      command=lambda: preprocess_data(self.path, self.notebook))
+                                      command=lambda: self.preprocess_data())
         button_preprocess.grid(row=2, column=2, padx=10, pady=10)
         self.content_frame.grid(row=0, column=0, pady=10)
 
@@ -228,7 +228,7 @@ class Launcher(tk.Tk):
                                       text="Pre-process and save",
                                       width=25,
                                       height=2,
-                                      command=lambda: preprocess_data(self.path, self.notebook),
+                                      command=lambda: self.preprocess_data(),
                                       state="disabled" if compact_status == 0 else "normal")
         img.grid(row=0, column=0)
         button_compact.grid(row=1, column=0, padx=10)
@@ -297,7 +297,7 @@ class Launcher(tk.Tk):
         data = load_stimulation_data(os.path.join(self.path, self.notebook["Experiment"]["ID"]))
         self.update_progress_bar(20, "Load sorted spike data")
         data2 = load_spikes_data(os.path.join(self.path, self.notebook["Experiment"]["ID"]))
-        self.update_progress_bar(20, "Compact blocks")
+        self.update_progress_bar(40, "Compact blocks")
         for block in data2:
             self.compact_block(block, data, data2)
         list_block_compacted = data2.keys()
@@ -308,6 +308,8 @@ class Launcher(tk.Tk):
         elif len(list_block_compacted) > 0:
             compact_status = 2
         self.show_buttons(compact_status)
+        self.update_progress_bar(100, "Done")
+
 
     def reset_progress_bar(self):
         self.progress_bar['value'] = 0
@@ -318,6 +320,21 @@ class Launcher(tk.Tk):
         self.progress_bar['value'] += added_value
         self.log.config(text=text)
         self.update()
+
+    def preprocess_data(self):
+        nwb_path = os.path.join(self.path, self.notebook["Experiment"]["ID"], "NWB")
+        list_files = os.listdir(nwb_path)
+        self.update_progress_bar(0, "Preprocessing data")
+        errors = 0
+        for index in range(len(list_files)):
+            if ".nwb" in list_files[index]:
+                try:
+                    preprocess_nwbfile(nwb_path, list_files[index])
+                    self.update_progress_bar(index/len(list_files)*100, "Preprocessing data: " + list_files[index] + " - Done. Error encountered: " + str(errors))
+                except:
+                    errors += 1
+                    print("Error with file " + list_files[index])
+                    self.update_progress_bar(index / len(list_files) * 100, "Preprocessing data: " + list_files[index] + " - Error")
 
     def compact_block(self, block, data, data2):
         self.update_progress_bar(round(40 / len(data2)), "Save block " + str(block))
@@ -460,9 +477,4 @@ def visualize_data(path, notebook):
     x.start()
 
 
-def preprocess_data(path, notebook):
-    nwb_path = os.path.join(path, notebook["Experiment"]["ID"], "NWB")
-    for file in os.listdir(nwb_path):
-        print(file)
-        if ".nwb" in file:
-            preprocess_nwbfile(nwb_path, file)
+
