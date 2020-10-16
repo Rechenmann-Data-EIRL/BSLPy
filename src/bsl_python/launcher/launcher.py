@@ -330,13 +330,16 @@ class Launcher(tk.Tk):
             if ".nwb" in list_files[index]:
                 try:
                     preprocess_nwbfile(nwb_path, list_files[index])
-                    self.update_progress_bar(index/len(list_files)*100, "Preprocessing data: " + list_files[index] + " - Done. Error encountered: " + str(errors))
+                    self.update_progress_bar(index/len(list_files), "Preprocessing data: " + list_files[index] + " - Done. Error encountered: " + str(errors))
                 except:
                     errors += 1
                     print("Error with file " + list_files[index])
-                    self.update_progress_bar(index / len(list_files) * 100, "Preprocessing data: " + list_files[index] + " - Error")
+                    self.update_progress_bar(index / len(list_files), "Preprocessing data: " + list_files[index] + " - Error")
+        self.update_progress_bar(1, "Pre-processing done. Error encountered: " + str(errors))
+
 
     def compact_block(self, block, data, data2):
+        print("Save block " + str(block))
         self.update_progress_bar(round(40 / len(data2)), "Save block " + str(block))
         subject = Subject(age=str(self.notebook["Mouse"]["Age"]), genotype=self.notebook["Mouse"]["Strain"],
                           species="Mouse",
@@ -392,7 +395,7 @@ class Launcher(tk.Tk):
             indices = data2[block]["spikes"][:, 1] == cluster
             if len(indices) > 0:
                 spike_times = [x for x in list(data2[block]["spikes"][indices, 0])]
-                waveform_sd = list(data2[block]["waveforms"]["std"][0, index])
+                waveform_sd = data2[block]["waveforms"]["std"][0, index].transpose().tolist()[0]
                 waveform_mean = list(data2[block]["waveforms"]["waveforms"][0, index][0])
                 electrodes = [x - 1 for x in list(np.unique(data2[block]["spikes"][indices, 3]))]
                 index += 1
@@ -407,7 +410,10 @@ class Launcher(tk.Tk):
         io = NWBHDF5IO(
             os.path.join(path_to_nwb, self.notebook["Experiment"]["ID"] + "_Block-" + str(block) + '.nwb'),
             mode='w')
-        io.write(nwbfile)
+        try:
+            io.write(nwbfile)
+        except:
+            pass
         io.close()
 
 
