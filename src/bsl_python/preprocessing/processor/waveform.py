@@ -23,8 +23,7 @@ class Waveform(Processor):
     def compute(self, units):
         waveform_analysis = {}
         fs = 24414.0625 / 1000
-        all_units = units.to_dataframe()
-        for unit_index, unit in all_units.iterrows():
+        for unit_index, unit in units.iterrows():
             waveform = unit.waveform_mean
             waveform_reverse = waveform[::-1]
             min_peak_value = min(waveform)
