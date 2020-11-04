@@ -1,6 +1,7 @@
 from src.bsl_python.preprocessing.experiments.deviant_tone import DeviantTone
 from src.bsl_python.preprocessing.experiments.tone_coarse import ToneCoarse
 from src.bsl_python.preprocessing.experiments.tone_fine import ToneFine
+from src.bsl_python.preprocessing.experiments.fms import FMS
 
 
 class ExperimentFactory:
@@ -13,6 +14,8 @@ class ExperimentFactory:
             experiment = ToneFine(nwb_file)
         elif name == 'ToneCoarse':
             experiment = ToneCoarse(nwb_file)
+        elif name == 'FMS':
+            experiment = FMS(nwb_file)
         else:
             raise NameError('Experiment ' + name + ' is not listed as implemented experiment.')
         return experiment

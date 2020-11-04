@@ -1,4 +1,3 @@
-import math
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -32,7 +31,8 @@ def build_dataframe(nwb_file):
     info = [flatten_dict(nwb_file.trials[trial_index].to_dict()) for trial_index in trials]
     for trial_index in trials:
         start_time = info[trial_index]["start_time"]
-        spikes = np.where(np.logical_and(start_time - 0.2 < spike_times, spike_times < start_time + 3.5))
+        stop_time = info[trial_index]["stop_time"]
+        spikes = np.where(np.logical_and(start_time - 0.2 < spike_times, spike_times < stop_time-0.2))
         trial_indices[spikes] = trial_index
         spike_times_per_trial[spikes] = spike_times[spikes] - start_time
         for column in additional_data.keys():
@@ -49,14 +49,29 @@ def build_dataframe(nwb_file):
 
 
 class Experiment(ABC):
+    stimuli_conditions = []
+    repetitions = []
+    processing_window = {'min': 0, 'max': 1}
+    spontaneous_window = {'min': -0.15, 'max': -0.05}
+
     def __init__(self, nwb_file):
         self.channels = nwb_file.electrodes
         self.spikes, self.info, self.units = build_dataframe(nwb_file)
-        self.stimuli_conditions = []
         self.processors = []
+        self.set_stimuli_conditions()
+        self.set_processing_window()
+        self.set_repetitions()
 
     @abstractmethod
-    def get_stimuli_conditions(self):
+    def set_stimuli_conditions(self):
+        pass
+
+    @abstractmethod
+    def set_processing_window(self):
+        pass
+
+    @abstractmethod
+    def set_repetitions(self):
         pass
 
     def compute_processing_time_window(self):
@@ -66,12 +81,6 @@ class Experiment(ABC):
     def preprocess(self):
         pass
 
-    def compute_sweep_time(self):
-        fq_min = 2000
-        fq_max = 48000
-        sweep_oct = abs(math.log2(fq_max / fq_min))
-        sweepTime = abs(sweep_oct / len(self.stimuli_conditions[1])) / 1000
-
     def save(self, nwb_file):
         if "spikes" in nwb_file.processing:
             nwb_file.processing.pop("spikes")
@@ -80,5 +89,17 @@ class Experiment(ABC):
         nwb_file.add_processing_module(spikes_module)
         for processor in self.processors:
             processor.replace_module(nwb_file)
+
+    def get_spikes_in_window(self, t_min, t_max):
+        return self.spikes[(t_min < self.spikes["trial_time"]) & (self.spikes["trial_time"] <= t_max)]
+
+    def get_spontaneous_spikes(self):
+        return self.get_spikes_in_window(self.spontaneous_window['min'],  self.spontaneous_window['max'])
+
+    def get_spontaneous_duration(self):
+        return -0.5 + 0.15
+
+    def get_stim_spikes(self):
+        return self.get_spikes_in_window(self.processing_window['min'],  self.processing_window['max'])
 
 

@@ -9,14 +9,13 @@ from src.bsl_python.preprocessing.processor.waveform import Waveform
 
 
 class DeviantTone(Experiment):
-    def __init__(self, spikes):
-        super(DeviantTone, self).__init__(spikes)
+    def __init__(self, nwb_file):
+        super(DeviantTone, self).__init__(nwb_file)
 
-    def get_stimuli_conditions(self):
+    def set_stimuli_conditions(self):
         self.stimuli_conditions = [{'name': 'Level, dB',
                                     'key': 'decB',
                                     'value': self.spikes.decB}]
-        return self.stimuli_conditions
 
     def compute_processing_time_window(self):
         pass

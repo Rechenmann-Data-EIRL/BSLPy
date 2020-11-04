@@ -52,6 +52,6 @@ def preprocess_nwbfile(path, filename):
 
 
 if __name__ == '__main__':
-    filename = "191128EM_Block-1.nwb"
-    path = "C:/Users/jujud/Documents/Consulting/Data/191128EM/NWB"
+    filename = "200220PV_Block-7.nwb"
+    path = "C:/Users/jujud/Documents/Consulting/Data/200220PV/NWB"
     preprocess_nwbfile(path, filename)

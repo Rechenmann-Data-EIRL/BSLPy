@@ -9,10 +9,10 @@ from numpy import unique
 
 
 class ToneCoarse(Experiment):
-    def __init__(self, spikes):
-        super(ToneCoarse, self).__init__(spikes)
+    def __init__(self, nwb_file):
+        super(ToneCoarse, self).__init__(nwb_file)
 
-    def get_stimuli_conditions(self):
+    def set_stimuli_conditions(self):
         self.stimuli_conditions = [
             {'name': 'Level, dB',
              'key': 'decB',
@@ -21,7 +21,6 @@ class ToneCoarse(Experiment):
              'key': 'freq',
              'values': unique(self.spikes.freq.values)/1000}
         ]
-        return self.stimuli_conditions
 
     def preprocess(self):
         fs = 24414.0625 / 1000
@@ -35,13 +34,13 @@ class ToneCoarse(Experiment):
         parameters = Parameters(activity.activity, mean_filtered_activity.activity)
         waveform = Waveform(self.units)
 
-        stim_activity = StimulationActivity(activity, self.info, self.get_stimuli_conditions()[0]["key"],
-                                            self.get_stimuli_conditions()[1]["key"], list_trials)
+        stim_activity = StimulationActivity(activity, self.info, self.set_stimuli_conditions()[0]["key"],
+                                            self.set_stimuli_conditions()[1]["key"], list_trials)
         trf = TuningReceptorField(3, stim_activity.activity,
                                   list(parameters.activity_parameters["mean_spontaneous_activity"].values),
                                   list(parameters.activity_parameters["activity_peak_amplitude"].values),
                                   list_electrodes,
-                                  self.get_stimuli_conditions()[0]["key"], self.get_stimuli_conditions()[1]["key"])
+                                  self.set_stimuli_conditions()[0]["key"], self.set_stimuli_conditions()[1]["key"])
         self.processors.append(activity)
         self.processors.append(filtered_activity)
         self.processors.append(mean_activity)
