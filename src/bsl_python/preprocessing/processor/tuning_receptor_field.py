@@ -82,7 +82,7 @@ class TuningReceptorField(Processor):
                 bw10 = (index_thr_10_max - index_thr_10_min) * octave_size
             index_thr_cf = next((index for index in range(len(summed_cleaned_trf_intensity)) if
                                  summed_cleaned_trf_intensity[index] > 0), None)
-            thr_cf = levels[2][index_thr_cf]
+            thr_cf = levels[2][index_thr_cf] if index_thr_cf is not None else None
             index_cf = np.min(np.where(tmp_cleaned_trf[index_thr_cf, :] == np.max(tmp_cleaned_trf[index_thr_cf, :])), 1)
             cf = levels[1][index_cf[0]] if len(index_cf) > 0 else np.nan
 

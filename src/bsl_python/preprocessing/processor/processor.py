@@ -11,7 +11,6 @@ class Processor(ABC):
 
     def replace_module(self, nwb_file):
         if self.name in nwb_file.processing:
-            print(self.name)
             nwb_file.processing.pop(self.name)
         nwb_file.add_processing_module(self.create_module())
 

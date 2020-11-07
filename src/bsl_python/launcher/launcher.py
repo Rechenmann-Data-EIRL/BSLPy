@@ -332,9 +332,9 @@ class Launcher(tk.Tk):
                     preprocess_nwbfile(nwb_path, list_files[index])
                     self.update_progress_bar(index / len(list_files), "Preprocessing data: " + list_files[
                         index] + " - Done. Error encountered: " + str(errors))
-                except:
+                except NameError as e:
                     errors += 1
-                    print("Error with file " + list_files[index])
+                    print("Error with file " + list_files[index] + ". " + str(e))
                     self.update_progress_bar(index / len(list_files),
                                              "Preprocessing data: " + list_files[index] + " - Error")
         self.update_progress_bar(1, "Pre-processing done. Error encountered: " + str(errors))

@@ -3,7 +3,6 @@ import pandas
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import numpy as np
-import scipy.signal
 import time
 import math
 import dash
@@ -16,23 +15,24 @@ import dash_table
 from src.bsl_python.GUI.app import app
 from src.bsl_python.lab_book_loader import LabBookLoader
 
-nwbfile = None
-nwbfiles = []
+nwb_file = None
+nwb_files = []
 c_file = None
 
 
 class Dashboard:
     @staticmethod
     def create(new_nwbfile, new_nwbfiles, notebook):
-        global nwbfile, nwbfiles, app, c_file
-        nwbfile = new_nwbfile
-        nwbfiles = new_nwbfiles
-        c_file = list(nwbfiles.keys())[0]
-        activity_parameters = nwbfile.processing["parameters"].data_interfaces[
+        global nwb_file, nwb_files, app, c_file
+        nwb_file = new_nwbfile
+        nwb_files = new_nwbfiles
+        c_file = list(nwb_files.keys())[0]
+        activity_parameters = nwb_file.processing["parameters"].data_interfaces[
             "activity_parameters"].to_dataframe().set_index("electrode")
         electrode_list = list(activity_parameters.index.values)
         app.layout = html.Div(id="dashboard",
-                              children=[Dashboard.create_layout(activity_parameters, electrode_list, electrode_list[0], notebook),
+                              children=[Dashboard.create_layout(activity_parameters, electrode_list, electrode_list[0],
+                                                                notebook),
                                         dbc.Toast(
                                             [html.P("This is the content of the toast", className="mb-0")],
                                             id="warning-toast",
@@ -45,17 +45,18 @@ class Dashboard:
 
     @staticmethod
     def create_layout(activity_parameters, electrode_list, electrode, notebook):
-        global nwbfile
-        trf = nwbfile.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
+        global nwb_file
+        trf = nwb_file.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
             ['electrode', 'freq', 'decB']).mean()
         all_channel_trf_fig = all_channels_trf(trf, electrode_list)
         params = pandas.DataFrame.from_dict({"Parameter": activity_parameters.columns,
                                              "Value": activity_parameters.loc[int(electrode)].values.round(2)})
         file_list = []
-        block_names = sorted(list(nwbfiles.keys()))
+        block_names = sorted(list(nwb_files.keys()))
 
-        for index in range(len(nwbfiles)):
-            file_list.append({'label': notebook['Trials']['StimulusSet'][index] + " - " + block_names[index], 'value': block_names[index]})
+        for index in range(len(nwb_files)):
+            file_list.append({'label': notebook['Trials']['StimulusSet'][index] + " - " + block_names[index],
+                              'value': block_names[index]})
         return dbc.Row(children=[
             dbc.Col(children=[
                 "Blocks",
@@ -75,7 +76,7 @@ class Dashboard:
                     className="mb-2"
                 ),
                 html.Hr(style={"border": "1px dashed white"}),
-                ExperimentInfo.get_html(nwbfile),
+                ExperimentInfo.get_html(nwb_file),
                 html.Hr(style={"border": "1px dashed white"}),
                 html.Div(
                     id='parameters',
@@ -105,18 +106,18 @@ class Dashboard:
     @staticmethod
     def create_middle_panel_figures(electrode):
         start_process_time = time.process_time()
-        all_spikes = nwbfile.processing["spikes"].data_interfaces["spikes"].to_dataframe()
-        trf = nwbfile.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
+        all_spikes = nwb_file.processing["spikes"].data_interfaces["spikes"].to_dataframe()
+        trf = nwb_file.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
             ['electrode', 'freq', 'decB']).mean()
-        mean_filtered_activity = nwbfile.processing["mean_filtered_activity"].data_interfaces
+        mean_filtered_activity = nwb_file.processing["mean_filtered_activity"].data_interfaces
         raster_fig = raster_plot(all_spikes, electrode)
         psth_fig = psth_plot(all_spikes, mean_filtered_activity, electrode)
-        cleaned_trf = nwbfile.processing["trf"].data_interfaces["processed_trf"]["cleaned_trf"]
-        filtered_trf = nwbfile.processing["trf"].data_interfaces["processed_trf"]["filtered_trf"]
-        trf_parameters = nwbfile.processing["trf"].data_interfaces["trf_parameters"].to_dataframe()
+        cleaned_trf = nwb_file.processing["trf"].data_interfaces["processed_trf"]["cleaned_trf"]
+        filtered_trf = nwb_file.processing["trf"].data_interfaces["processed_trf"]["filtered_trf"]
+        trf_parameters = nwb_file.processing["trf"].data_interfaces["trf_parameters"].to_dataframe()
         trf_fig = trf_plot(trf, cleaned_trf, filtered_trf, trf_parameters, electrode)
 
-        waveform_fig = waveform_plot(nwbfile.units, electrode)
+        waveform_fig = waveform_plot(nwb_file.units, electrode)
         print("Final Plot - elapsed time ", (time.process_time() - start_process_time))
         return [
             dcc.Graph(
@@ -151,19 +152,19 @@ class Dashboard:
     [dash.dependencies.Input('electrode-dropdown', 'value'), dash.dependencies.Input('file-dropdown', 'value')],
     prevent_initial_call=True)
 def change_electrode(electrode, file):
-    global c_file, nwbfile
+    global c_file, nwb_file
     all_channel_trf_fig = dash.no_update
     changed_file = False
     if file != c_file:
         c_file = file
-        nwb_io = NWBHDF5IO(nwbfiles[c_file], 'r')
-        nwbfile = nwb_io.read()
+        nwb_io = NWBHDF5IO(nwb_files[c_file], 'r')
+        nwb_file = nwb_io.read()
         changed_file = True
-    if len(nwbfile.processing) > 0:
-        activity_parameters = nwbfile.processing["parameters"].data_interfaces[
+    if len(nwb_file.processing) > 0:
+        activity_parameters = nwb_file.processing["parameters"].data_interfaces[
             "activity_parameters"].to_dataframe().set_index("electrode")
         if changed_file:
-            trf = nwbfile.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
+            trf = nwb_file.processing["trf"].data_interfaces["trf"].to_dataframe().groupby(
                 ['electrode', 'freq', 'decB']).mean()
             electrode_list = list(activity_parameters.index.values)
             all_channel_trf_fig = all_channels_trf(trf, electrode_list)
@@ -175,7 +176,8 @@ def change_electrode(electrode, file):
             data=params.to_dict('records'),
             style_cell={"color": "black"}
         )], dash.no_update, dash.no_update
-    return [], all_channel_trf_fig, [], True, [html.P("No pre-processing data was found for this block", className="mb-0")]
+    return [], all_channel_trf_fig, [], True, [
+        html.P("No pre-processing data was found for this block", className="mb-0")]
 
 
 def raster_plot(all_spikes, electrode):
@@ -189,8 +191,10 @@ def raster_plot(all_spikes, electrode):
         cond = electrode_spikes[initial_variable].tolist()[rep_index]
         repetition_per_cond[cond] += 1
         repetition[rep_index] = repetition_per_cond[cond]
-    y_step = np.min(np.diff(np.unique(electrode_spikes[initial_variable].tolist())))*0.9 if len(electrode_spikes) > 0 else 0
-    y = electrode_spikes[initial_variable].tolist() + repetition/np.max(repetition) * y_step - y_step/2 if len(electrode_spikes) > 0 else []
+    y_step = np.min(np.diff(np.unique(electrode_spikes[initial_variable].tolist()))) * 0.9 if len(
+        electrode_spikes) > 0 else 0
+    y = electrode_spikes[initial_variable].tolist() + repetition / np.max(repetition) * y_step - y_step / 2 if len(
+        electrode_spikes) > 0 else []
     raster_fig.add_trace(go.Scatter(x=x, y=y, mode='markers', marker=dict(size=2)))
     y_axis_selectors = []
     columns = sorted(list(all_spikes.columns))
@@ -241,21 +245,30 @@ def psth_plot(all_spikes, mean_filtered_activity_rate, electrode):
 
 def trf_plot(trf, cleaned_trf, filtered_trf, trf_parameters, electrode):
     levels = trf.index.levels
-    trf_fig = make_subplots(rows=1, cols=3)
+    trf_fig = make_subplots(rows=1, cols=3, shared_yaxes=True, )
     electrode_index = levels[0].tolist().index(electrode)
     loc = list(range(electrode_index * len(levels[1]) * len(levels[2]),
                      (electrode_index + 1) * len(levels[1]) * len(levels[2])))
     data = trf.iloc[loc]
-    trf_matrix = np.reshape(data.values, (len(levels[1]), len(levels[2]))).transpose()
+    trf_matrix = np.reshape(data.values, (len(levels[1]), len(levels[2])))
     parameters = trf_parameters.iloc[electrode_index]
     clean_trf = cleaned_trf[electrode_index]
     filter_trf = filtered_trf[electrode_index]
     add_trf_fig_for_electrode(parameters, levels, clean_trf, filter_trf, trf_fig, trf_matrix)
-    trf_fig.update_layout(coloraxis=dict(colorscale='Haline'), showlegend=False, margin=dict(l=10, r=10, b=10, t=10))
-    trf_fig.update_layout(yaxis=dict(scaleanchor="x", scaleratio=1), yaxis2=dict(scaleanchor="x", scaleratio=1),
-                          yaxis3=dict(scaleanchor="x", scaleratio=1), template="plotly_dark")
-    trf_fig.update_yaxes(showgrid=False, zeroline=False, linecolor='black', showticklabels=False, ticks='')
-    trf_fig.update_xaxes(showgrid=False, zeroline=False, linecolor='black', showticklabels=False, ticks='')
+    freq_level = levels[1].tolist()
+    decb_level = levels[2].tolist()
+    tick_x_values = list(range(0, len(decb_level), int(np.ceil(len(decb_level)/5)))),
+    tick_x_text = [str(round(decb_level[tick])) for tick in tick_x_values[0]],
+    tick_y_values = list(range(0, len(freq_level), int(np.ceil(len(freq_level)/5)))),
+    tick_y_text = [str(round(freq_level[tick])) for tick in tick_y_values[0]],
+    for column in range(1, 4):
+        trf_fig.update_xaxes(showgrid=False, zeroline=False, linecolor='black', ticktext=tick_x_text[0], tickvals=tick_x_values[0],
+                             row=1, col=column)
+    trf_fig.update_xaxes(title=levels[2].name, row=1, col=2)
+    trf_fig.update_yaxes(title=levels[1].name, showgrid=False, zeroline=False, linecolor='black', ticktext=tick_y_text[0], tickvals=tick_y_values[0], row=1,
+                         col=1)
+    trf_fig.update_layout(coloraxis=dict(colorscale='Haline'), showlegend=False, margin=dict(l=10, r=10, b=15, t=10))
+    trf_fig.update_layout(yaxis=dict(scaleanchor="x", scaleratio=1), template="plotly_dark")
     return trf_fig
 
 
@@ -277,7 +290,8 @@ def all_channels_trf(trf, list_electrodes):
         column = math.floor(electrode / nb_rows)
         all_channel_fig.add_trace(all_channel_trf_map, row=row + 1, col=column + 1)
         index += 1
-    all_channel_fig.update_layout(coloraxis=dict(colorscale='Haline'), showlegend=False, template="plotly_dark")
+    all_channel_fig.update_layout(coloraxis=dict(colorscale='Haline'), showlegend=False, template="plotly_dark",
+                                  margin={'t': 50})
     all_channel_fig.update_yaxes(showgrid=False, zeroline=False, linecolor='black', showticklabels=False, ticks='')
     all_channel_fig.update_xaxes(showgrid=False, zeroline=False, linecolor='black', showticklabels=False, ticks='')
     return all_channel_fig
@@ -290,23 +304,24 @@ def add_trf_fig_for_electrode(trf_parameters, levels, cleaned_trf, filtered_trf,
     trf_fig.add_trace(trf_map, row=1, col=1)
     trf_fig.add_trace(filtered_trf_map, row=1, col=2)
     trf_fig.add_trace(cleaned_trf_map, row=1, col=3)
-    index_BF = levels[1].tolist().index(trf_parameters["BF"])
-    index_THR = levels[2].tolist().index(trf_parameters["THR"])
-    index_CF = levels[1].tolist().index(trf_parameters["CF"])
-    index_THRCF = levels[2].tolist().index(trf_parameters["ThrCF"])
-    if index_BF is not None and index_THR is not None:
-        trf_fig.add_shape(
-            type="line", xref="x", yref="y", x0=index_BF, y0=index_THR, x1=index_BF, y1=len(levels[2]) - 1,
-            line=dict(color="Red", width=3),
-            row=1, col=3
-        )
-    if index_CF is not None and index_THRCF is not None:
-        trf_fig.add_shape(
-            type="circle", xref="x", yref="y", x0=index_CF - 0.5, y0=index_THRCF - 0.5, x1=index_CF + 0.5,
-            y1=index_THRCF + 0.5,
-            line=dict(color="Red", width=1),
-            row=1, col=3
-        )
+    if not np.isnan(trf_parameters["BF"]) and not np.isnan(trf_parameters["THR"]):
+        index_BF = levels[2].tolist().index(trf_parameters["BF"])
+        index_THR = levels[1].tolist().index(trf_parameters["THR"])
+        index_CF = levels[2].tolist().index(trf_parameters["CF"])
+        index_THRCF = levels[1].tolist().index(trf_parameters["ThrCF"])
+        if index_BF is not None and index_THR is not None:
+            trf_fig.add_shape(
+                type="line", xref="x", yref="y", x0=index_BF, y0=index_THR, x1=index_BF, y1=len(levels[1]) - 1,
+                line=dict(color="Red", width=3),
+                row=1, col=3
+            )
+        if index_CF is not None and index_THRCF is not None:
+            trf_fig.add_shape(
+                type="circle", xref="x", yref="y", x0=index_CF - 0.5, y0=index_THRCF - 0.5, x1=index_CF + 0.5,
+                y1=index_THRCF + 0.5,
+                line=dict(color="Red", width=1),
+                row=1, col=3
+            )
 
 
 def waveform_plot(units, electrode, unit_index=None):
@@ -348,11 +363,11 @@ def waveform_plot(units, electrode, unit_index=None):
 
 if __name__ == '__main__':
     path = "C:/Users/jujud/Documents/Consulting/Data/191128EM/NWB"
-    nwbfiles = {"Block " + (file.split('-')[-1].replace('.nwb', '')).zfill(2): os.path.join(
+    nwb_files = {"Block " + (file.split('-')[-1].replace('.nwb', '')).zfill(2): os.path.join(
         "C:/Users/jujud/Documents/Consulting/Data/191128EM/NWB", file) for file in os.listdir(path) if ".nwb" in file}
-    c_file = list(nwbfiles.keys())[0]
-    nwb_io = NWBHDF5IO(nwbfiles[c_file], 'r')
-    nwbfile = nwb_io.read()
+    c_file = list(nwb_files.keys())[0]
+    nwb_io = NWBHDF5IO(nwb_files[c_file], 'r')
+    nwb_file = nwb_io.read()
     labbook = LabBookLoader().load_notebook("C:/Users/jujud/Documents/Consulting/Data/", "Labbook_191128EM.xlsx")
-    Dashboard.create(nwbfile, nwbfiles, labbook)
+    Dashboard.create(nwb_file, nwb_files, labbook)
     app.run_server(debug=False)

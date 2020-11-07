@@ -1,14 +1,8 @@
-import functools
-import math
-import operator
 import os
 
 import pynwb
-from hdmf.common import DynamicTable
-import time
 from pynwb import NWBHDF5IO, ProcessingModule
 import pandas as pd
-import numpy as np
 import plotly.io as pio
 
 from src.bsl_python.preprocessing.experiments.experiment_factory import ExperimentFactory
@@ -16,9 +10,6 @@ from src.bsl_python.preprocessing.experiments.experiment_factory import Experime
 
 pio.templates.default = "plotly_dark"
 pd.options.plotting.backend = "plotly"
-
-
-
 
 
 def create_module_from_activity(name, description, activity, frequency):
@@ -33,7 +24,11 @@ def create_module_from_activity(name, description, activity, frequency):
 def preprocess_nwbfile(path, filename):
     path_to_file = os.path.join(path, filename)
     nwb_io = NWBHDF5IO(path_to_file, 'r')
-    nwb_file = nwb_io.read()
+    try:
+        nwb_file = nwb_io.read()
+    except:
+        print("Error loading file " + filename)
+        return
 
     experiment = ExperimentFactory.create_experiment(nwb_file.protocol, nwb_file)
     experiment.preprocess()
@@ -52,6 +47,6 @@ def preprocess_nwbfile(path, filename):
 
 
 if __name__ == '__main__':
-    filename = "200220PV_Block-7.nwb"
-    path = "C:/Users/jujud/Documents/Consulting/Data/200220PV/NWB"
+    filename = "191128EM_Block-1.nwb"
+    path = "C:/Users/jujud/Documents/Consulting/Data/191128EM/NWB"
     preprocess_nwbfile(path, filename)
