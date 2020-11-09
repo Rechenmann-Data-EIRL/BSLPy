@@ -299,7 +299,8 @@ class Launcher(tk.Tk):
         data2 = load_spikes_data(os.path.join(self.path, self.notebook["Experiment"]["ID"]))
         self.update_progress_bar(40, "Compact blocks")
         for block in data2:
-            self.compact_block(block, data, data2)
+            if block in data:
+                self.compact_block(block, data, data2)
         list_block_compacted = data2.keys()
         list_block_compacted = sorted(list_block_compacted)
         compact_status = 0
@@ -309,7 +310,6 @@ class Launcher(tk.Tk):
             compact_status = 2
         self.show_buttons(compact_status)
         self.update_progress_bar(100, "Done")
-
 
     def reset_progress_bar(self):
         self.progress_bar['value'] = 0
@@ -330,13 +330,17 @@ class Launcher(tk.Tk):
             if ".nwb" in list_files[index]:
                 try:
                     preprocess_nwbfile(nwb_path, list_files[index])
-                    self.update_progress_bar(index/len(list_files)*100, "Preprocessing data: " + list_files[index] + " - Done. Error encountered: " + str(errors))
-                except:
+                    self.update_progress_bar(index / len(list_files), "Preprocessing data: " + list_files[
+                        index] + " - Done. Error encountered: " + str(errors))
+                except NameError as e:
                     errors += 1
-                    print("Error with file " + list_files[index])
-                    self.update_progress_bar(index / len(list_files) * 100, "Preprocessing data: " + list_files[index] + " - Error")
+                    print("Error with file " + list_files[index] + ". " + str(e))
+                    self.update_progress_bar(index / len(list_files),
+                                             "Preprocessing data: " + list_files[index] + " - Error")
+        self.update_progress_bar(1, "Pre-processing done. Error encountered: " + str(errors))
 
     def compact_block(self, block, data, data2):
+        print("Save block " + str(block))
         self.update_progress_bar(round(40 / len(data2)), "Save block " + str(block))
         subject = Subject(age=str(self.notebook["Mouse"]["Age"]), genotype=self.notebook["Mouse"]["Strain"],
                           species="Mouse",
@@ -350,7 +354,7 @@ class Launcher(tk.Tk):
                           experiment_description='',
                           session_id=self.notebook["Experiment"]["ID"],
                           subject=subject,
-                          protocol=self.notebook["Trials"]["StimulusSet"][block-1])
+                          protocol=self.notebook["Trials"]["StimulusSet"][block - 1])
         device = nwbfile.create_device(name="TDT")
         cortical_region = str(list(np.unique(self.notebook["Electrophy"]["Cortical region"]))[0])
         electrode_group = nwbfile.create_electrode_group(
@@ -368,7 +372,7 @@ class Launcher(tk.Tk):
         nb_trials = 0
         trial_key = ""
         for key in data[block]["epocs"].keys():
-            if key== "coun" or key == "ChnA":
+            if key == "coun" or key == "ChnA":
                 attribute = data[block]["epocs"][key]
                 nb_trials = len(attribute["data"])
                 trial_key = key
@@ -392,7 +396,7 @@ class Launcher(tk.Tk):
             indices = data2[block]["spikes"][:, 1] == cluster
             if len(indices) > 0:
                 spike_times = [x for x in list(data2[block]["spikes"][indices, 0])]
-                waveform_sd = list(data2[block]["waveforms"]["std"][0, index])
+                waveform_sd = data2[block]["waveforms"]["std"][0, index].transpose().tolist()[0]
                 waveform_mean = list(data2[block]["waveforms"]["waveforms"][0, index][0])
                 electrodes = [x - 1 for x in list(np.unique(data2[block]["spikes"][indices, 3]))]
                 index += 1
@@ -407,7 +411,10 @@ class Launcher(tk.Tk):
         io = NWBHDF5IO(
             os.path.join(path_to_nwb, self.notebook["Experiment"]["ID"] + "_Block-" + str(block) + '.nwb'),
             mode='w')
-        io.write(nwbfile)
+        try:
+            io.write(nwbfile)
+        except:
+            pass
         io.close()
 
 
@@ -463,18 +470,13 @@ def launch_server(path, notebook):
     port = 8050
     Timer(1.5, open_browser, [port]).start()
     nwb_path = os.path.join(path, notebook["Experiment"]["ID"], "NWB")
-    nwbfiles = {"Block " + (file.split('-')[-1].replace('.nwb', '')).zfill(2): os.path.join(nwb_path, file) for file in os.listdir(nwb_path) if ".nwb" in file}
+    nwbfiles = {"Block " + (file.split('-')[-1].replace('.nwb', '')).zfill(2): os.path.join(nwb_path, file) for file in
+                os.listdir(nwb_path) if ".nwb" in file}
     c_file = list(nwbfiles.keys())[0]
-    nwb_io = NWBHDF5IO(nwbfiles[c_file], 'r')
-    nwbfile = nwb_io.read()
-
-    Dashboard.create(nwbfile, nwbfiles, notebook)
+    Dashboard.get_instance().create(nwbfiles, notebook, c_file)
     app.run_server(debug=False, port=port)
 
 
 def visualize_data(path, notebook):
     x = threading.Thread(target=launch_server, args=(path, notebook))
     x.start()
-
-
-
