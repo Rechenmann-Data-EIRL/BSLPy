@@ -1,3 +1,5 @@
+[![BCH compliance](https://bettercodehub.com/edge/badge/Rechenmann-Data-EIRL/BSLPy?branch=master)](https://bettercodehub.com/)
+
 BSLPy
 ==========
 
