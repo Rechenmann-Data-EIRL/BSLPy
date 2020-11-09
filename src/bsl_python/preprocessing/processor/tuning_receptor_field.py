@@ -19,7 +19,7 @@ class TuningReceptorField(Processor):
 
     def __init__(self, filter_size, stim_activity, spontaneous_rate_mean, peak_amplitude, list_electrodes,
                  feature_1_name, feature_2_name):
-        super(TuningReceptorField, self).__init__('trf', 'TRF')
+        super(TuningReceptorField, self).__init__('trf', 'Tuning Receptor Field')
         self.filter_size = filter_size
         self.compute(stim_activity, spontaneous_rate_mean, peak_amplitude, list_electrodes, feature_1_name,
                      feature_2_name)
@@ -49,7 +49,7 @@ class TuningReceptorField(Processor):
             loc = list(range(electrode_index * len(levels[1]) * len(levels[2]),
                              (electrode_index + 1) * len(levels[1]) * len(levels[2])))
             data = self.trf.iloc[loc]
-            trf_matrix = np.reshape(data.values, (len(levels[1]), len(levels[2]))).transpose()
+            trf_matrix = np.reshape(data.values, (len(levels[1]), len(levels[2])))
             tmp_filtered_trf = scipy.ndimage.median_filter(trf_matrix, (self.filter_size, self.filter_size),
                                                            mode='reflect')
             tmp_cleaned_trf = tmp_filtered_trf - spontaneous_rate_mean[index]
@@ -68,11 +68,11 @@ class TuningReceptorField(Processor):
             index_bf = summed_cleaned_trf_freq.index(max(summed_cleaned_trf_freq))
             index_thr = next((index for index in range(len(tmp_cleaned_trf[:, index_bf])) if
                               tmp_cleaned_trf[index, index_bf] > 0), None)
-            bf = levels[1][index_bf] if is_empty > 0 else np.nan
-            thr = levels[2][index_thr] if is_empty > 0 else np.nan
+            bf = levels[2][index_bf] if is_empty > 0 else np.nan
+            thr = levels[1][index_thr] if is_empty > 0 else np.nan
             bw10 = np.nan
-            if not np.isnan(thr) and thr + 10 in levels[2]:
-                index_thr_10 = levels[2].tolist().index(thr + 10)
+            if not np.isnan(thr) and thr + 10 in levels[1]:
+                index_thr_10 = levels[1].tolist().index(thr + 10)
                 index_thr_10_min = next(
                     (index_bf - index for index in range(len(tmp_cleaned_trf[index_thr_10, 0:index_bf - 1])) if
                      tmp_cleaned_trf[index_thr_10, index_bf - 1 - index] == 0), None)
@@ -82,14 +82,22 @@ class TuningReceptorField(Processor):
                 bw10 = (index_thr_10_max - index_thr_10_min) * octave_size
             index_thr_cf = next((index for index in range(len(summed_cleaned_trf_intensity)) if
                                  summed_cleaned_trf_intensity[index] > 0), None)
-            thr_cf = levels[2][index_thr_cf] if index_thr_cf is not None else None
+            thr_cf = levels[1][index_thr_cf] if index_thr_cf is not None else None
             index_cf = np.min(np.where(tmp_cleaned_trf[index_thr_cf, :] == np.max(tmp_cleaned_trf[index_thr_cf, :])), 1)
-            cf = levels[1][index_cf[0]] if len(index_cf) > 0 else np.nan
+            cf = levels[2][index_cf[0]] if len(index_cf) > 0 else np.nan
 
             bwat60 = np.nan
-            if 60 in levels[2]:
-                ind60 = np.where(levels[2] == 60)[0][0]
-                val60min = np.where(tmp_cleaned_trf[ind60, 0:index_bf - 1] == 0)[0][-1] + 1
+            if 60 in levels[1] and not np.isnan(bf):
+                ind60 = np.where(levels[1] == 60)[0][0]
+                if index_bf == 0:
+                    val60min = np.where(tmp_cleaned_trf[ind60, index_bf] == 0)
+                else:
+                    val60min = np.where(tmp_cleaned_trf[ind60, 0:(index_bf - 1 if index_bf > 0 else 0)] == 0)[0] + 1
+                if len(val60min) == 0:
+                    val60min = 0
+                else:
+                    val60min = val60min[-1]
+
                 val60max = np.where(tmp_cleaned_trf[ind60, index_bf + 1:] == 0)[0][0] - 1 + index_bf
                 bwat60 = (val60max - val60min) * octave_size
 

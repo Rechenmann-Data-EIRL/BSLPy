@@ -59,7 +59,6 @@ class DefaultSpikingActivity(SpikingActivity):
 
 class FilteredActivity(SpikingActivity):
     spiking_activity = None
-    trials = None
 
     def __init__(self, spiking_activity):
         super(FilteredActivity, self).__init__('filtered_activity',

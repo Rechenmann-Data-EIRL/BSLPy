@@ -473,10 +473,7 @@ def launch_server(path, notebook):
     nwbfiles = {"Block " + (file.split('-')[-1].replace('.nwb', '')).zfill(2): os.path.join(nwb_path, file) for file in
                 os.listdir(nwb_path) if ".nwb" in file}
     c_file = list(nwbfiles.keys())[0]
-    nwb_io = NWBHDF5IO(nwbfiles[c_file], 'r')
-    nwbfile = nwb_io.read()
-
-    Dashboard.create(nwbfile, nwbfiles, notebook)
+    Dashboard.get_instance().create(nwbfiles, notebook, c_file)
     app.run_server(debug=False, port=port)
 
 

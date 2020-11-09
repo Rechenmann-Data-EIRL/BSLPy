@@ -81,6 +81,12 @@ class Experiment(ABC):
     def preprocess(self):
         pass
 
+    def get_processor(self, name):
+        for processor in self.processors:
+            if processor.name == name:
+                return processor
+        raise Exception("No processor found with name " + name)
+
     def save(self, nwb_file):
         if "spikes" in nwb_file.processing:
             nwb_file.processing.pop("spikes")

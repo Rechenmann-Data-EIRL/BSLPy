@@ -30,6 +30,7 @@ class ToneFine(Experiment):
     def set_processing_window(self):
         self.processing_window = {'min': 0.01, 'max': 0.06}
 
+
     def preprocess(self):
         fs = 24414.0625 / 1000
         list_trials = range(len(self.info))
