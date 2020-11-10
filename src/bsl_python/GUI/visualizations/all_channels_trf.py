@@ -3,8 +3,6 @@ import math
 import numpy as np
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
-import dash_core_components as dcc
-
 from src.bsl_python.GUI.visualizations.visualization import Visualization
 
 
@@ -33,7 +31,7 @@ def all_channels_trf(trf, list_electrodes):
     for electrode in list_electrodes:
         data = trf.iloc[
             list(range(index * len(levels[1]) * len(levels[2]), (index + 1) * len(levels[1]) * len(levels[2])))]
-        trf_matrix = np.reshape(data.values, (len(levels[1]), len(levels[2]))).transpose()
+        trf_matrix = np.reshape(data.values, (len(levels[1]), len(levels[2])))
 
         all_channel_trf_map = go.Heatmap(z=trf_matrix, coloraxis="coloraxis", name="Electrode_" + str(electrode))
         row = electrode % nb_rows

@@ -42,7 +42,7 @@ class TuningReceptorField(Processor):
                            "BWat60": [],
                            "electrode": []}
         # Step size in octaves
-        octave_size = round(np.log2(levels[1][-1] / levels[1][0]) / (len(levels[1]) - 1), 4)
+        octave_size = round(np.log2(levels[2][-1] / levels[2][0]) / (len(levels[2]) - 1), 4)
         index = 0
         for electrode in list_electrodes:
             electrode_index = levels[0].tolist().index(electrode)
@@ -74,12 +74,13 @@ class TuningReceptorField(Processor):
             if not np.isnan(thr) and thr + 10 in levels[1]:
                 index_thr_10 = levels[1].tolist().index(thr + 10)
                 index_thr_10_min = next(
-                    (index_bf - index for index in range(len(tmp_cleaned_trf[index_thr_10, 0:index_bf - 1])) if
+                    (index_bf - index - 1 for index in range(len(tmp_cleaned_trf[index_thr_10, 0:index_bf - 1])) if
                      tmp_cleaned_trf[index_thr_10, index_bf - 1 - index] == 0), None)
                 index_thr_10_max = next(
-                    (index + index_bf for index in range(len(tmp_cleaned_trf[index_thr_10, index_bf + 1:])) if
+                    (index + index_bf + 1 for index in range(len(tmp_cleaned_trf[index_thr_10, index_bf + 1:])) if
                      tmp_cleaned_trf[index_thr_10, index_bf + 1 + index] == 0), None)
-                bw10 = (index_thr_10_max - index_thr_10_min) * octave_size
+                if index_thr_10_min is not None and index_thr_10_max is not None:
+                    bw10 = (index_thr_10_max - index_thr_10_min) * octave_size
             index_thr_cf = next((index for index in range(len(summed_cleaned_trf_intensity)) if
                                  summed_cleaned_trf_intensity[index] > 0), None)
             thr_cf = levels[1][index_thr_cf] if index_thr_cf is not None else None
@@ -97,8 +98,8 @@ class TuningReceptorField(Processor):
                     val60min = 0
                 else:
                     val60min = val60min[-1]
-
-                val60max = np.where(tmp_cleaned_trf[ind60, index_bf + 1:] == 0)[0][0] - 1 + index_bf
+                val60max = np.where(tmp_cleaned_trf[ind60, index_bf + 1:] == 0)[0]
+                val60max = 0 if len(val60max) == 0 else val60max[0] - 1 + index_bf
                 bwat60 = (val60max - val60min) * octave_size
 
             self.parameters["BF"].append(bf)

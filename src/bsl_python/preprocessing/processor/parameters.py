@@ -42,9 +42,9 @@ class Parameters(Processor):
         return module
 
 
-def get_activity(activity, tmin, tmax):
-    index_tmin = math.floor((tmin + 0.2) / 0.001)
-    index_tmax = math.floor((tmax + 0.2) / 0.001)
+def get_activity(activity, t_min, t_max):
+    index_tmin = math.floor((t_min + 0.2) / 0.001)
+    index_tmax = math.floor((t_max + 0.2) / 0.001)
     new_activity = {electrode: [activity[electrode][trial][index_tmin:index_tmax] for trial in
                                 range(len(activity[electrode]))] for electrode in activity.keys()}
     return new_activity
