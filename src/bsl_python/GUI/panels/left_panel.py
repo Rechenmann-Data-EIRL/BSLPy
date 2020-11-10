@@ -1,9 +1,7 @@
-from src.bsl_python.GUI.experiment_info import ExperimentInfo
 from src.bsl_python.GUI.panels.panel import Panel
 import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 import dash_html_components as html
-import dash_table
 
 
 class LeftPanel(Panel):
